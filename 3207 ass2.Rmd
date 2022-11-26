@@ -1,0 +1,502 @@
+---
+title: "Biol3207_ass2_Acidification_Effects_on_Behaviour"
+author: "Angeline Sun"
+date: "2022-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+###Topic
+Acidification_Effects_on_Behaviour
+
+###Assignment task
+The goal of this assignment is to conduct a meta-analysis on ocean acidification effects on behaviour. Recall the paper by Clark et al. (2020) that we worked on in week 6. This study was an experimental study across 5-6 different reef fish that looked at comparing the effect of elevated CO2 (in ppm) relative to some control on fish behaviour. That study, you might recall, did not find strong evidence that increased acidification had effects on behaviour.
+
+Nonetheless, this was just a single study (albeit done on 6 species). In this assignment we want to use meta-analysis to:
+
+1. estimate the overall effect of ocean acidification on behaviour and determine if these effects are general across studies conducting similar experiments;
+
+2. understand how variable the effect size is within the literature
+
+3. what factors (biological, methodological, publication practices) explain variation in effect size.
+
+Using the skills that you have already learnt in the class you will be required to write a reproducible report in Rmarkdown. You have been provided with a number of files that you will use for the assignment. This includes:
+
+1. The OA_activitydat_20190302_BIOL3207.csv data. You have already used this file, and should have code to bring it in, clean it up and create the necessary summary statistics you will need for the project. Pay close attention to what summary statistics you need! If you have forgotten what these data are about you can read the readme_BIOL3207.txt file.
+2. The clark_paper_data.csv file contains the metadata for the Clark et al. (2020) paper that you will require for merging into the ocean_meta_data.csv file. The meaning of all the columns can be found in the meta-data_ocean_meta.csv file. You only need the meta-data_ocean_meta.csv file to understand what the columns mean, otherwise, you can ignore it.
+3. The ocean_meta_data.csv file is the file you will use for the meta-analysis, graphing, interpretation and writing the report. The meaning of all the columns can be found in the meta-data_ocean_meta.csv file. You only need the meta-data_ocean_meta.csv file to understand what the columns mean, otherwise, you can ignore it.
+
+### Assessment
+The assessment is worth 40% of your final mark. You are to work independently on your reports. You will be assessed on three major areas: i) Statistical Analysis and Interpretation; ii) Reproducibility and iii) Coding, Writing Structure & Presentation. Below we detail in each section what we are looking for:
+
+## provide the link to my GitHub Repo.
+`(https://github.com/AngeleneSun/week6_3207QingyuSun/blob/main/README.md)` 
+
+#1. Statistical Analysis and Interpretation (50%)
+1. Correct analysis of Clark et al. (2020) data (i.e., OA_activitydat_20190302_BIOL3207.csv) to generate the summary statistics (means, SD, N) for each of the fish species’ average activity for each treatment.
+
+```{r}
+## Install several packages
+library(pacman)
+library(orchaRd)
+p_load(tidyverse, flextable, janitor, ggpmisc, metafor, patchwork)
+
+## Read the Clark et al. (2020) data (i.e., OA_activitydat_20190302_BIOL3207.csv) and select meaningful columns
+
+ass1_data <- read.csv("C:/Users/26935/OneDrive/桌面/3207 ass2/OA_activitydat_20190302_BIOL3207.csv")%>%
+  dplyr::select(loc, species, treatment, animal_id, sl, size, activity, comment) %>% mutate(c(residual = 1:n()))
+```
+
+```{r}
+## Do a check of the data by turning variables to factors
+ass1_data$loc <- as.factor(ass1_data$loc)
+ass1_data$species <- as.factor(ass1_data$species)
+ass1_data$size <- as.factor(ass1_data$size)
+ass1_data$treatment <- as.factor(ass1_data$treatment)
+
+summary(ass1_data)
+###In the summary, we know that "animal_id" and "activity" have the NA values.  However, the data cannot be affected if "animal_id" not exist, so we only consider deleting the NA "activity" values.And also by checking the data, there is no any strange errors like spelling, capital, etc.
+
+### Find where does the NA values distributes and whether have influence on data effect
+table(ass1_data[!complete.cases(ass1_data$activity),] %>% select(loc, species))
+## Concentrate on loc "LIRS 2014" but no other locations and species "acantho", "ambon","humbug","lemon".
+```
+
+
+```{r}
+library(dplyr)
+attach(ass1_data)
+ass1_data[is.na(activity),]
+ass2_data <- ass1_data[complete.cases(ass1_data$activity),]## delete NA activity value and it also because that rows will inhibit calculate statistical values
+
+str(ass2_data)## If we want to know a bit more about the new data(i.e.,ass_data) we can also use the str() function. As can be seen in the image below, the data has 582 rows and nine columns by deleting 7 NA "activity" values. Moreover, we can see the data type of the different variables (columns).
+
+##While the percentage of NA data is near to the original sample data, so we may realize this change didn't do some negative impact to our statistical data distribution.
+
+res <- ass2_data %>% group_by(species, treatment) %>% summarise(mean= mean(activity), sd= sd(activity), n= n())
+res## The summary statistics (means, SD, N) for each of the fish species’ average activity for each treatment
+
+##Another type of the data summary.Each has its own advantages and disadvantages.
+# calculate mean,SD and N of activity across each species and treatment 
+other_res <- ass2_data %>% group_by(species, treatment) %>% summarise(mean = mean(activity),sd = sd(activity),n = n(),.groups = "drop") %>% 
+pivot_wider(names_from = treatment,values_from = c(mean,n,sd))##After the summary, all grouping structures of the current data set are deleted and the data set returns to its previous ungrouped state by using [.groups = "drop"].
+
+# Change colnames of all columns in order to merge with the next metadata
+colnames(other_res) <- c("Species","oa.mean", "ctrl.mean", "oa.n","ctrl.n", "oa.sd","ctrl.sd")
+other_res
+```
+
+2. Through coding, merge the summary statistics generated from 1) with the metadata (i.e., clark_paper_data.csv) from Clark et al. (2020).
+```{r}
+ass3_data <- read.csv("C:/Users/26935/OneDrive/桌面/3207 ass2/clark_paper_data.csv")
+df <- merge(ass3_data, other_res, all=TRUE)
+df ###Here is the merged.data with summary statistics generated from 1) with the metadata (i.e., clark_paper_data.csv)
+```
+
+3. Through coding, correctly merge the combined summary statistics and metadata from Clark et al. (2020) (output from 1 & 2) into the larger meta-analysis dataset (i.e., ocean_meta_data.csv).
+
+```{r}
+ass4_data <- read.csv("C:/Users/26935/OneDrive/桌面/3207 ass2/ocean_meta_data.csv")
+glimpse(ass4_data)##Have a glimpse of the information amount of ocean_meta_data
+
+# load the package
+library(dplyr)
+#print(distinct(ass4_data))(## Delete duplicated data rows found no repeated though,because the data.frame is too long, so I hide it by #)
+```
+
+
+```{r}
+### Already moved to the question1, below is for reappear some significant info!!
+
+##In order to combine the metadata from Clark et al. (2020) (output from 1 & 2) with the new data(i.e., ocean_meta_data.csv), we need to fix the columns which contains the same information into the common name.
+
+#For the control groups, use the same name " ctrl" with the ocean_meta_data.csv.
+library(dplyr)
+ctrl <- levels(ass2_data$treatment)[levels(ass2_data$treatment)=="control"]
+#For the CO2 groups, use the same name "oa" with the ocean_meta_data.csv.
+oa <- levels(ass2_data$treatment)[levels(ass2_data$treatment)=="CO2"]
+summary(ass2_data)
+# calculate mean,SD and N of activity across each species and treatment 
+other_res <- ass2_data %>% group_by(species, treatment) %>% summarise(mean = mean(activity),sd = sd(activity),n = n(),.groups = "drop") %>% 
+pivot_wider(names_from = treatment,values_from = c(mean,n,sd))
+other_res
+# Change colnames of all columns in order to merge with the next metadata
+colnames(other_res) <- c("Species", "oa.mean", "ctrl.mean", "oa.n", "ctrl.n", "oa.sd", "ctrl.sd")
+other_res
+```
+
+```{r}
+##Thus, we combine the metadata from Clark et al. (2020) (output from 1 & 2) with the new data(i.e., ocean_meta_data.csv)
+merge_3data <- merge(ass4_data, df,all= TRUE)
+###Here is the merged.data with summary statistics generated from Clark & 2) with the larger meta-analysis dataset (i.e., ocean_meta_data.csv) though lots of NA.
+str(merge_3data)##the data has 824 rows and 22 columns.
+```
+
+4. Correctly calculate the log response ratio (lnRR) effect size for every row of the dataframe using metafor’s escalc() function.
+
+```{r}
+##Concerning the ass3_data, some numeric variables are in integer which are not good for describing them, so we change all of them to numeric by using read_csv.
+data <- merge_3data %>% mutate(across(.cols=where(is.integer), .fns=as.numeric))#Convert Multiple Columns From Integer to Numeric Type in R
+
+# Here we need to change "-" in "Pub.year.IF" and "X2017.IF" to NA as numeric format for further calculation.
+unique(data$Pub.year.IF[is.na(as.numeric(data$Pub.year.IF))])
+unique(data$X2017.IF[is.na(as.numeric(data$X2017.IF))])
+#Thus, change "-"to NA
+data[data=="-"] <- NA
+summary(data)##Let's see the characterstic of the dataset!
+```
+
+```{r}
+### Fittingly, we can use the Log response ratio (lnRR), since the mean treatment between the two groups is significantly different.
+data_lnRR <- metafor::escalc(measure = "ROM", data=data ,m1i = oa.mean, m2i = ctrl.mean, sd1i = oa.sd, sd2i = ctrl.sd,n1i = oa.n, n2i = ctrl.n,var.names = c("lnRR", "VRR"))
+##When there is NA in lnRR, it means that one of the mean value of one kind of treatment is positive, while the other is negative, so it couldn't be calculated, just reflects the difference sample in different treatments from the baseline.
+```
+
+```{r}
+# If we select the NA in lnRR, we will see that in Behavioural.metric column, they all have "change"&"rate".
+test <- subset(data_lnRR,is.na(lnRR))%>% select(Behavioural.metric, ctrl.mean,oa.mean,Study,lnRR)
+test
+
+##Hence,we do a calculation to figure out what the proportion of the related change& rate in all experiments.
+# See which studies have the NA value in lnRR.
+NAsty <- unique(data_lnRR[!complete.cases(data_lnRR$lnRR),]$Study)
+# And see how many the specific related change& rate words appear in the former selected studies.
+rela <- data_lnRR %>% filter(Study %in% NAsty) %>%  filter(grepl("change|Change|rate",Behavioural.metric)) %>% nrow()
+##As the result showed, there is 104 experiments have the related words.
+
+# See how many experiments in total in studies.
+tota <- data_lnRR %>% filter(Study %in% NAsty) %>% nrow()
+##As the result showed, there is 109 experiments in total.
+print(paste(
+"Specific words appearing time:",rela,
+",Total experiment time:",tota,
+",specific words appearing time in the total experiment times:",rela/tota))
+# Thus, what we want to know is that 104/109 is the proportion of related specific words appearing time in the total experiment times. Which high proportion makes the lnRR not to be believed.
+
+##We removed the conditions where have a NA in lnRR, and compare the effect size difference in the previous selected studies and the others by testing lnRR and VRR.
+# Remove NA and label specific studies and the one in "NAsty"
+data1 <- data_lnRR %>%filter(!is.na(lnRR)) %>% 
+         mutate(chan = (Study %in% NAsty)|grepl("change|Change",Behavioural.metric))
+summary(data1)
+## Do a test on the distribution while the size of the changed lnRR and its variance VlnRR. And plots below.
+data1 %>% select(lnRR, VRR) %>% pivot_longer(cols = lnRR:VRR, names_to = "nu") %>%
+      ggplot(aes(x=1,y = value)) + geom_violin() + facet_wrap(~nu, scale = "free") + ggtitle("Original Distribution of lnRR and VRR")
+```
+#Figure1."Original Distribution of lnRR and VRR"
+AS the plots showed, we found 1)the extreme RR(response ratio) is up to e^12,lnRR distribution is axisymmetric around x=1, but the values of the endpoints on both sides are abnormally large. So we may not take such points into consideration or the liberality of them is need to be further tested.2)The variance of lnRR(VRR) presents a very unusual situation, with only a maximum value and other points that are completely 0, so I will remove the big point, because it proves that the experimental results of this point are not reliable
+```{r}
+##Calibration, by setting sqrt(VRR)> 2*abs(lnRR)) & (sqrt(VRR)> log(1.5) as standard, to prevent too much deviation.Get rid of points with outrageous variance values.
+data1 %>% filter( (sqrt(VRR) > 2*abs(lnRR)) & (sqrt(VRR)> log(1.5) )) %>% select(Study,ctrl.n:VRR)
+##Removing them.
+data2 <- data1 %>% filter((sqrt(VRR) <= 2*abs(lnRR)) | (sqrt(VRR) <= log(1.5) ))
+print(paste("Initial number of experiment:",nrow(data),
+            "by deleting:",nrow(data2)))
+# Saving it by writing the file to a csv file
+write_csv(data2,"data2.csv")
+##In this part,The sample size decreases by 97 untrustworthy points, which makes our results more reliable no matter how the validity of the meta-analysis changes. 
+```
+
+```{r}
+##THus, we test the after-changed distribution again by showing them and use different color to distinguish.
+data2 %>% mutate(sd_lnRR = sqrt(VRR)) %>% select(lnRR, sd_lnRR, chan) %>% pivot_longer(cols = c(lnRR,sd_lnRR), names_to = "g",values_to = "value") %>% ggplot(aes(x = 1,y = value)) + geom_violin() +geom_jitter(alpha = 0.8,aes(color = chan))+ facet_wrap(~g, scale = "free") + ggtitle("New distribution of lnRR and VRR after doing change to sample size with the origin")
+##In this plot, we could find the some points still have a large effect values and the sampling variance still has some extreme values by deleting some untrustworthy points and including measurement. Usually which have large effect values and VRR is the experiments that measuring change proportion .
+```
+# Fig2."New distribution of lnRR and VRR after doing change to sample size with the origin"
+
+```{R}
+#And we could see the distribution difference of two measurement methods data clearer through the density plot.
+data2 %>% mutate(sd_lnRR = sqrt(VRR)) %>% select(lnRR, sd_lnRR, chan) %>% pivot_longer(cols = c(lnRR,sd_lnRR), names_to = "c", values_to = "value") %>%  ggplot(aes(x = value)) + geom_density(aes(color = chan)) + facet_wrap(~c, scale = "free") + ggtitle("Two diff measurement methods' Distribution of lnRR and VRR ")
+##It could be easier to find the experiments that measuring change proportion have large effect values and VRR.
+```
+#Fig3. "Two diff measurement methods' Distribution of lnRR and VRR "
+
+##5&6 together below
+5. Correct meta-analytic model fitted to the data that controls for the sampling variance of lnRR. The model should include a random effect of study and observation. Use metafor’s rma.mv() function.
+6. Written paragraph of the findings and what they mean which is supported with a figure. The paragraph should include:
+
+1) Correct presentation and interpretation of overall meta-analytic mean and measures of uncertainty around the mean estimate (e.g., 95% confidence intervals).
+
+2) Measures of heterogeneity in effect size estimates across studies (i.e., I2 and/or prediction intervals - see predict() function in metafor)
+
+3) Forest plot showing the mean estimate, 95% confidence interval, and prediction interval with clearly labelled axes, number of samples and studies plotted on figure.
+```{r}
+##In order to find the most appropriate random effect of the study and observation values, we need to make clear the composition of the experimental design of different studies first, so as to satisfy the multi-level meta-analysis model.
+##Where use the file "data2" here.
+data2 %>% group_by(Study) %>% 
+    summarise(climatenum = length(unique(Climate..FishBase.)), speciesnum = length(unique(Species)), life.stagenum = length(unique(Life.stage)),stimulusnum= length(unique(Cue.stimulus.type))) %>% 
+    pivot_longer(cols = -1,names_to = "d", values_to = "value") %>% 
+    ggplot(aes(x = value)) + geom_histogram(binwidth = 1) + geom_text(aes(label=as.character(..count..)),stat="bin",binwidth=1,vjust=-0.5) +  facet_wrap(~d,scale = "free",nrow = 1) + ggtitle("different experimental designs' compositions")
+##Here we see how do these studies allocate their materials number and methods.These fishes almost live in the same climate condition(except one different) and the same life stage, so the two aspects didn't influence most because almost the same. And we speculate that the variance of each studies is caused by the species and stimulus methods.
+```
+#Fig4. "different experimental designs' compositions"
+
+```{r}
+##Thus we use the same way to count the life stages of each species, stimulus types,studies amounts.
+data2 %>% group_by(Species) %>% 
+    summarise(studynum = length(unique(Study)), life.stagenum = length(unique(Life.stage)),stimulusnum= length(unique(Cue.stimulus.type))) %>% 
+    pivot_longer(cols = -1,names_to = "d", values_to = "value") %>% 
+    ggplot(aes(x = value)) + geom_histogram(binwidth = 1) + geom_text(aes(label=as.character(..count..)),stat="bin",binwidth=1,vjust=-0.5) +  facet_wrap(~d,scale = "free") + ggtitle("different species' stimulus method compositions and experiment times")
+##In the plot, the studies mainly focused on a life stage in these species, more than half of the total species are all in a study and seldom does the studies use the same species, near to half of the species are under the stimulus where more than 2 types in all experiments.
+```
+#Fig5."different species' stimulus method compositions and experiment times"
+
+##Based on the two histogram plots, it could be found that almost publications are willing to use only 1 specie in a life stage to conduct a study, while only 1 climate area if involved several species. Always every studies will contain 1-2 methods of stimulus. So in a study, the variance is caused most by the stimulus involved and study number.
+
+```{r}
+##In order to know whether the difference are randomly caused by each factor effects and whether the factor's lnRR fits the normal distribution.
+# Using QQ plot to show different types of effect, aiming to reflect the total distribution differences by normal distribution.
+data2 %>% ggplot(aes(sample = lnRR)) + stat_qq() + stat_qq_line() + facet_wrap(~Effect.type,scale = "free") +  ggtitle ("different study effect types's lnRR distribution showed by QQ plot")
+##We could see the QQ plots are definitely not normal distribution and lots of extreme values, but nearly according to a point on the axis x equals 0 presents a central symmetry, because we don't know how the method used to calculate the value and also the effect.type could have different functions to diff species.
+```
+#Fig6. "different study effect types's lnRR distribution showed by QQ plot"
+
+```{r}
+##Based on last finding, we are going to calculate the all factors' lnRR.
+alldis <- function(data,factors){
+allplot <- tibble()
+for (i in factors){
+group <- ensym(i)
+alldata <- data %>% group_by({{group}}) %>% summarise(mean_lnRR = mean(lnRR)) %>% select(mean_lnRR) %>% mutate(fa = as.character(i))
+allplot <- rbind(alldata,allplot)
+   }
+allplot %>% ggplot(aes(sample = mean_lnRR)) + stat_qq() + stat_qq_line() + facet_wrap(~fa,scale = "free") + ylab("lnRR mean") + ggtitle( "lnRR mean of all factors in experiment by QQ plot")
+}
+```
+# Fig7."lnRR mean of all factors in experiment by QQ plot"
+
+```{r}
+alldis(data2,c("Species","Study","Climate..FishBase.","Cue.stimulus.type","Year..online.","Authors"))
+##In this figure, only the effect of Cue.stimulus.type is a normal distribution, others are big deviation.
+
+###Hence, based on all the factors, the main random effect could be "Study". A model of meta-analysis could be made by 1) the diff variance in diff groups caused by "Cue.stimulus.type" as diff cues in studies(when a species in a position may have diff stimulus/cues with other species in the system) ,and 2)other variances lead by diff situations like species and experiment settings.
+
+data3 <- data2 %>% group_by(Study) %>% mutate(cal = 1:n()) %>% ungroup()##Here I use cal to calculate the amount of each studies.
+
+#The meta-analytic model in multi-level 
+Model <- metafor::rma.mv(yi=lnRR~1, V = VRR, data = data3, method = "REML", random = list(~1|Study, ~1|Species, ~1|cal),dfs = "contain", test = "t")##Cannot have "Cue.stimulus.type" here because it has NA values.
+print(Model)
+##We can see from above that the model estimates an overall meta-analytic mean as 0.516 with a 95% confidence interval of 0.1957 to 0.8368. In other words, for each variation by an average of 0.516.But in this condition, The p-value is 0.0023 less than 0.05 and the difference by using species, experimental methods and variables between diff experiments is large still should be considered.
+
+##When turning lnRR to RR(respone ratio)
+p_MLMA <- predict(Model, transf = exp)
+p_MLMA
+##and measuring of heterogeneity in effect size estimates across studies I^2(square):
+#For calculating I^2:
+library(orchaRd)
+I2_vals <- orchaRd::i2_ml(Model)
+I2 <- tibble(type = firstup(gsub("I2_", "", names(I2_vals))), I2 = round(I2_vals,4))
+flextable(I2) %>%
+   align(part = "header", align = "center") %>%
+   compose(part = "header", j = 1, value = as_paragraph(as_b("Type"))) %>%
+   compose(part = "header", j = 2, value = as_paragraph(as_b("I"), as_b(as_sup("2")), as_b("(%)")))
+```
+#Table1. Measuring of heterogeneity in effect size estimates across studies I^2(square) by meta-analysis model
+
+##From the previous table, we could see the variance in total is 100%, and 14.12% for study, 8.97% for species, and 76.90% for cal, which means our data has a large heterogeneous and the experimental methods, measurements and experiment itself is highly variable.
+```{r}
+##Using a orchard plot for the multi-level meta-analysis.
+orchaRd::orchard_plot(Model, mod = "1", group = "Study", data = data3,
+    xlab = "all studies' lnRR", angle = 45)##Some points still have extreme values and where the sampling size is extremely big for some experiments.The outcome is related with Model we did before(meta-analytic mean as 0.516 with a 95% confidence interval of 0.1957 to 0.8368).
+```
+
+```{r}
+##Overall compared analysis of external factors like climate and methods.
+
+#Firstly, explore how does external factors like climate effect lnRR changing. There is no doubt that different regions under different temperature conditions have different influences on the content of CO2 in seawater, so the degree of acidification of seawater under different temperature conditions will be different.
+##Remove some without habitat points
+climate <- data3 %>% filter(Climate..FishBase. != "Not provided")
+MLMR <- metafor::rma.mv(lnRR ~ Climate..FishBase.-1, V = VRR, method = "REML", 
+                         random = list(~1|Species, ~1|Study/cal),
+dfs = "contain", test = "t", data = climate)
+MLMR##From the table results, we could realize that the mean lnRR varies largely in different habitats, such as: From the highest in deep water is 0.51, to the lowest in subtropic water is -0.174, no matter how the p-value is although all is above 0.14. That is to say that" In different places, there has a different effect adaptations of OA.
+
+##Orchard plot for diff habitats!
+orchaRd::orchard_plot(MLMR, mod = "Climate..FishBase.", group = "Study", data = climate,
+    xlab = "lnRR in diff habitats", angle = 45)##It can seen that except deep water and trop water, all the habitats have the mean lnRR nearly 0. Why it will deviate, it's because of the experiment has a large sampling size or it has some extreme points.
+```
+# Fig8. "lnRR in diff habitats"
+
+```{r}
+##Secondly, let's figure out how does the influence of OA differs to diff life stage! Using the same methods.
+##Remove some without stage points
+stage <- data3 %>% filter(Life.stage != "Not provided")
+MLMR_1 <- metafor::rma.mv(lnRR ~ Life.stage-1, V = VRR, method = "REML", 
+                         random = list(~1|Species, ~1|Study/cal),
+dfs = "contain", test = "t", data = stage)
+MLMR_1##From the table results, we could realize that the mean lnRR varies largely in different life stages, such as: only larvae has the largest postive mean lnRR, but adult and juvenile both negative reflected in effect size. That is to say that" In different life stages, there has a different effect adaptations of OA.
+
+##Orchard plot for diff life stages!
+orchaRd::orchard_plot(MLMR_1, mod = "Life.stage", group = "Study", data = stage,
+    xlab = "lnRR in diff life stages", angle = 45)##Where the larvae stage have the precise and accurate studies than the two stages maybe because of the positive effect size.
+```
+# Fig9."lnRR in diff life stages"
+
+```{r}
+##Thirdly, let's combine life stage and climate together what we found before.
+##Remove some points
+cs <- data3 %>% filter(Life.stage!= "Not provided" & Climate..FishBase. != "Not provided")
+MLMR_2 <- metafor::rma.mv(lnRR ~ Life.stage + Climate..FishBase.-1, V = VRR, method = "REML", 
+                         random = list(~1|Species, ~1|Study/cal),
+dfs = "contain", test = "t", data = cs)
+MLMR_2
+
+##Let see the three types of methods how to show on VRR.
+V <- as.data.frame(orchaRd::r2_ml(MLMR))
+V <- cbind(V,as.data.frame(orchaRd::r2_ml(MLMR_1)))
+V <- cbind(V,as.data.frame(orchaRd::r2_ml(MLMR_2)))
+colnames(V) <- c("climate","life stage","climate + life stage")
+knitr::kable(V,caption = "Variance varied by different meta-analysis models in publication bias")
+##Here is to proved our prediction, by using two variables together could better illustrate the variance in diff experiments. And the constant variance could only larger slightly than 0.02,because in diff experiments, it varies a lot.
+```
+# Table3. "Variance varied by different meta-analysis models in publication bias"
+
+
+7. Funnel plot for visually assessing the possibility of publication bias.
+```{r}
+##In order to observe clearer we need to group the data by precision(1/sqrt(VRR)), then shows the influence of precision (1/√lnRR) on effect size.
+#Divide the samples into diff groups by precision measuring.
+data4 <- data3 %>% mutate(precision = 1/sqrt(VRR)) %>%  mutate(
+    prec = case_when(
+        precision < 5 ~ "low",
+        precision >= 5 & precision < 50 ~ "normal",
+        precision >= 50 & precision < 500 ~ "exact",
+        precision >= 500 ~ "overexact",
+  )) %>% mutate(prec = fct_relevel(as.factor(prec),"low","normal","exact"))
+data4 %>% ggplot(aes(y = precision, x = lnRR)) + geom_point() + facet_wrap(~prec, scale = "free") + ggtitle("diff groups'precision doing with lnRR ") + xlab("lnRR") + ylab("precision(1/sqrt(lnRR))")##Among them, there are some very accurate experiments with very small variances and very large effect sizes in ocean acidification studies. In other groups in other graphs, the lnRR values are more dispersed, but the lnRR values tend to converge as the accuracy increases.
+```
+#Fig 11."diff groups'precision doing with lnRR "
+
+```{r}
+##To get the diff groups' sample size proportion in the total sample.
+precnum <- data4 %>% count(across(prec)) %>% mutate(ratio = round(n/nrow(data4),3))
+knitr::kable(precnum,caption = "diff groups' sample size proportion and numbers with the level of precisions")
+##Where the exact and overexact groups only contains for 0.032%, so it has very slightly influence to the whole population even we could remove them.
+```
+#Table4. "diff groups' sample size proportion and numbers with the level of precisions"
+
+```{r}
+##Using funnel plots to test the study publication bias.
+metafor::funnel(x = data4$lnRR, vi = data4$VRR, yaxis = "seinv",
+    digits = 2, level = c(0.1, 0.05, 0.01), shade = c("red", "blue", "green"),ylim = c(0.01,30),xlim = c(-3,3),
+    las = 1, xlab = "Response ratio (RR)", atransf = exp, legend = TRUE, pch =10)## Where shows that almost no bias in the places have higher precision because the error is low. But when the RR close to x=1.00, it will have some bias, which means that low-precise studies is related to the result with larger effect size(more obvious visually).
+```
+# Fig12. Funnel plot with lnRR and precision
+
+8. Time-lag plot assessing how effect sizes may or may not have changed through time.
+```{r}
+##Let's check whether effect size of OA will influence by the year.online by using time-lag plot.
+ggplot(data4, aes(y = lnRR, x = Year..online., size = 1/sqrt(VRR))) + geom_point(alpha = 0.8) +geom_smooth(method = lm, color = "pink", show.legend = FALSE) + labs(x = "The year of publishing",
+    y = "lnRR", size = "Precision (1/SE)") +
+    geom_hline(yintercept = 0,col = "orange", linetype = 2)+
+    theme_light() + ggtitle("The change of effect size as time passed")
+##It could be seen in this time-lag plot, when the publishing time is increasing, the effect size(lnRR) shows a decrease trend while approach slowly to 0 in 2020. To some extent, the reduction in the effect size over the study years suggests that the damage from ocean acidification was reduced and remedied.
+```
+# Fig13. "The change of effect size as time passed"
+
+## 9. Formal meta-regression model that includes year as a moderator (fixed effect) to test for time-lag bias
+```{r}
+## Below, by using the year as a fixed effect in meta-analysis model!
+data5 <- data4 %>% mutate(newyear = Year..online. - mean(Year..online.))
+fixyear <- metafor::rma.mv(lnRR ~ newyear, V = VRR, random = list(~1 | Study/cal),test = "t", dfs = "contain", data = data5)
+fixyear
+##Thus, the time changing shows a clear impact on the effect size(lnRR), with -0.115 as the rate of change, it gradually decreases on average over the years (-0.115 as the slope). The 95% confidence interval ranges from -0.203 to -0.028, and the average effect value (lnRR) after ignoring the year effect is above 0.1446.
+```
+
+10. Formal meta-regression model that includes inverse sampling variance (i.e., 1vlnRR) to test for file-drawer biases
+```{r}
+##Now, inverse sampling variance (i.e., 1vlnRR) is considered as a new meta-regression model to measure bias. In order to make the data more centralized, "exact+overexact (before)" is used as the large value of deviation, and 97% is used as the index to separate the data.
+isv <- metafor::rma.mv(lnRR ~ inverse_VRR, V = VRR, random = list(~1 | Study/cal),
+    test = "t", dfs = "contain", data = data5 %>% mutate(inverse_VRR = 1/VRR) %>% filter(inverse_VRR <= quantile(inverse_VRR, 0.97)))
+isv
+##As can be seen from the figure below, the effect of inverse sampling variance (i.e., 1vlnRR) on the lnRR effect is well reflected, when 1vlnRR becomes a fixed effect. Since p-value is 0.02 less than 0.05, our verification is satisfied with a slope of -0.001 and a 95% confidence interval of [-0.001, 0].
+```
+
+##11 & 12 below together:
+11. A written paragraph that discusses the potential for publication bias based on the meta-regression results. What type of publication bias, if any, appears to be present in the data? If publication bias is present, what does it mean and what might be contributing to such bias?
+
+12. Identify any studies contributing to publication bias. How do your updated meta-analysis results compare with a meta-analysis by Clement et. al. (2022)? Are there any concerns about these studies? If so, describe using references to existing papers what concerns have been raised?
+
+```{r}
+##Here we combine the influence of year and precision of studies together as a fixed effect to meta-analysis model. For avoiding some extreme values, we use 99% for seperating it.
+pub <- metafor::rma.mv(lnRR ~ newyear + precision, V = VRR, random = list(~1 | Study/cal),
+    test = "t", dfs = "contain", data = data5 %>% filter(precision < quantile(data5$precision,0.99)))
+pub
+##From this combined meta-analysis, we can see that the effects of both time and precision can be regarded as clearly fixed effects. Because the slope of year is -0.124 (95% confidence interval: [-0.215, -0.033]) and the slope of accuracy is -0.022 (95% confidence interval: [-0.037, -0.007]). The mean lnRR effect value was 0.365 (95% confidence interval: [0.078, 0.652]) when the fixed effects of year and precision were ignored. From the lnRR here, we can see that the effect value itself gradually decreases with the progress of the research, because the initial effect value is too large, which may be caused by the excessive study effect. Subsequent studies gradually reduce its influence and have a clear difference from the original large lnRR, which makes scholars in the field of research thinking about the normal effect does OA to fish species.
+
+##The variance showed by diff pub-bias meta-analysis model.
+table <- as.data.frame(orchaRd::r2_ml(isv))
+table <- cbind(table,as.data.frame(orchaRd::r2_ml(fixyear)))
+table <- cbind(table,as.data.frame(orchaRd::r2_ml(pub)))
+colnames(table) <- c("precision","year","year+precision")
+knitr::kable(table, caption = "variance showed by diff pub-bias meta-analysis model")##Here the VRR of effect size is larger than the climate one we did before,as the two combined year and precision is about 3.74829% as composition of variance, which shows using the two aspects together could explain the difference in studies better than other conditions.
+```
+#Table5."variance showed by diff pub-bias meta-analysis model"
+
+```{r}
+##Now, let's see whether IF(influence factor) as a contributor will influence the publication bias.
+data6 <- data5 %>% group_by(Study) %>% mutate(mean_VRR = mean(VRR), sp.num = length(unique(Species)), mean_lnRR = mean(lnRR), cue.num = length(unique(Cue.stimulus.type))) %>% ungroup() %>%  select(Study,Year..online., Pub.year.IF,mean_VRR, Effect.type, Average.n, sp.num, cue.num,mean_lnRR) %>% distinct()
+
+data6$Pub.year.IF <- as.numeric(data6$Pub.year.IF)    
+data6 <- data6 %>% mutate(scale = c("0-20%","20-40%","40-60%","60-80%","80-100%")[findInterval(data6$Pub.year.IF,c(0,quantile(data6$Pub.year.IF,0.2,T),quantile(data6$Pub.year.IF,0.4,T),quantile(data6$Pub.year.IF,0.6,T),quantile(data6$Pub.year.IF,0.8,T),100),all.inside = T)]) 
+
+## See how does Effect.type do with study "IF"
+##Draw a barplot to see the potential of acceptance in journals.
+
+data6 %>% drop_na()%>% ggplot(aes(x= scale, ,fill=Effect.type)) + geom_bar(aes(color=Effect.type), position = "fill", alpha=0.3) +scale_y_continuous(labels = scales::percent) +theme_light()+ ggtitle("Acceptance distribution of diff effect types in diff IF journals") + xlab("IF")
+```
+# Fig 14. "Acceptance distribution of diff effect types in diff IF journals"
+
+```{r}
+##Where is clear to see that the study with strong effect types tends to be accepted by high IF journals, and no effect type studies could only published in the same low IF journals. So we could infer that the journal has the bias on effect type to decide whether accept one study. 
+
+
+##And next, we do a check of the influence made by effect size(lnRR), study precision and sample size(Average.n) to IF(influence factor)
+data6 %>% drop_na() %>% mutate(precision = 1/sqrt(mean_VRR)) %>% pivot_longer(c(mean_lnRR,Average.n,precision),names_to = "trait", values_to = "value") %>% 
+ggplot(aes(y= scale,x = value)) + geom_boxplot() + facet_wrap(~trait,scale = "free",nrow = 3) +  plot_annotation(
+  title = "Distribution of effect size(lnRR), study precision and sample size(Average.n) to IF(influence factor)") + ylab("IF")###Among the three figures, shows that precision of study is not increasing with the IF increases(or even precision gradually decrease). However, the effect size(lnRR) and sample size(Average.n) are significantly increasing as the IF increasing, so I may infer that the high IF article need sample and effect size more than precision, while precision is not very critical in such studies(Take control in macro perspective than micro).
+```
+#Fig 15. "Distribution of effect size(lnRR), study precision and sample size(Average.n) to IF(influence factor)"
+
+```{r}
+##Next, we check whether the sp.and Cue amount changing influenced by IF increasing.
+data6 %>% drop_na() %>% pivot_longer(c(sp.num,cue.num),names_to = "trait", values_to = "value") %>% ggplot(aes(y= scale,x = value)) + geom_count() + facet_wrap(~trait,scale = "free",ncol = 2) +  plot_annotation(
+  title = "Distribution of the Species and cue/stimulus amount in IF changing") + ylab("IF")##In this plot, the species changing shows the different response with cue/stimulus, as the IF increasing, species amount has the same trend then, but in converse of cue amount changing.
+```
+#Fig 16. "Distribution of the Species and cue/stimulus amount in IF changing"
+
+##Conclusion:
+#From the above 20 figures,
+1. If different measurement methods are used to obtain data, there will be a big difference between lnRR (response ratio) and VRR (sample variance), which is reflected in that lnRR will become an outlier, that is, deviate from the normal value (Fig2 & Fig3).
+2.Almost all studies are focused on the same species and one life stage, so the subsequent results with obvious bias are influenced by the experimental samples and the process alone. In addition, the temperature location of the species and its life stage jointly determine the average value, plus or minus sign of the effect value(Fig8 & Fig9 & Table3).
+3.File-drawer conditions tend to publish experiments with high-efficiency and high-precision results, while experiments with large sample variance and low accuracy tend to have large effect values. However, experiments with low effect value and low accuracy are rarely considered. Therefore, when the accuracy is low, only the experimental results with obvious visual effects are usually published. Researchers prefer experiments with large effect value, and there is a certain preference for OA research(Fig12).
+4.As shown in the time-lag figure, the effect value decreases year by year. compare with a meta-analysis by Clement et. al. (2022), it can be found that the effect value of adult fish in cold water gradually decreases. Warm water larvae are more sensitive to seawater CO2 concentrations and have been widely used in the past(Fig13).
+5.Journals with high impact factors have a significant bias towards the inclusion of articles, and are more inclined to efficiently sized articles, which also indicates that articles with low or no effect value can only be submitted to articles with low impact factors. In most cases, the journals with different impact factors have a bias towards the inclusion of articles(Fig.14).
+6.In articles with high impact factors, the research accuracy is not significantly related to it, which is reflected in that the research accuracy does not increase significantly with the increase of impact factors, but the effect size, sample size, and number of species have significantly increased. In general, in short, the response of research methods and accuracy to impact factors is not obvious.However, high-impact factors usually also need to take into account better accuracy and more instrumentation, thus achieving impact requirements and achieving more statistically significant results(Fig15 & Fig16).
+7.Considering the study by Clement et. al. (2022), we should give a chance to other researchers' articles with different backgrounds and characteristic attributes, and also give them a chance to be included in high-impact journals. In order to obtain more plausible results in theory, researchers should focus on the number of tools used and the precision and scope of stimulus's conclusions, and make timely modifications to previous inappropriate experimental designs. Publishers and authors should be open about their published data and research methods, preferably constantly exploring methods and effects that can be generalized and used in more diverse scenarios.
+
+
+
+
+
+
+#Reproducibility (30%):
+
+1. Code, analysis and data is setup in a public GitHub Repository
+
+2. Workflow, meta-data and file structure is clearly documented (using a README file) as is the history of changes for each file.
+
+3. Rmarkdown documents follow reproducibility principles:
+1) Rmarkdown document rendered as an html!
+
+2) Use Figure and Table code chunks that are referenced in text.
+
+3) Writing of findings is done using inline code chunks with reference to specific object values.
+
+# 3.Coding, Writing Structure & Presentation (20%):
+1. Code is clearly annotated, clean, and only what is needed is presented
+
+2. Figure and Tables have clear and well labelled captions that are informative and correctly referenced within the document.
+
+3. Sentences are clear and understandable.
